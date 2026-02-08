@@ -13,12 +13,10 @@ public class SecurityConfig {
     http
       .csrf(csrf -> csrf.disable())
       .authorizeHttpRequests(auth -> auth
-        .requestMatchers("/api/health").permitAll()
+        .requestMatchers("/api/health", "/api/health/**").permitAll()
         .requestMatchers("/api/dashboard/**").authenticated()
         .anyRequest().denyAll()
       )
-      // For Phase B, we’re just proving "public vs protected".
-      // OAuth/JWT comes in Phase C.
       .httpBasic(basic -> {});
 
     return http.build();
