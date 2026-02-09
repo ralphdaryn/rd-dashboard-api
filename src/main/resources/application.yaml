@@ -1,3 +1,11 @@
 spring:
   application:
     name: rd-dashboard-api
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: https://dev-63anuvq74z2bdfrj.us.auth0.com/
+          audiences:
+            - https://rd-dashboard-api
