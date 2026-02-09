@@ -4,29 +4,23 @@ import java.util.Set;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-
 import org.springframework.security.authorization.AuthorizationDecision;
 import org.springframework.security.authorization.AuthorizationManager;
-
 import org.springframework.security.core.Authentication;
-
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
-
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
-
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.access.intercept.RequestAuthorizationContext;
 
 @Configuration
 public class SecurityConfig {
 
-  // 🔐 ONLY these Auth0 users can access the dashboard
-  // ✅ Replace these with the REAL `user.sub` values
-  private static final Set<String> ALLOWED_SUBS = Set.of(
-    "REPLACE_WITH_RALPH_SUB",
-    "REPLACE_WITH_CLIENT_SUB"
+  // ✅ Only these emails can access dashboard endpoints
+  private static final Set<String> ALLOWED_EMAILS = Set.of(
+    "stepxstepclub@gmail.com",
+    "ralphdarync@gmail.com"
   );
 
   @Bean
@@ -36,36 +30,30 @@ public class SecurityConfig {
       .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
       .authorizeHttpRequests(auth -> auth
         .requestMatchers("/api/health", "/api/health/**").permitAll()
-
-        // 🔒 JWT required AND sub must be allow-listed
-        .requestMatchers("/api/dashboard/**").access(onlyAllowedSubs())
-
+        .requestMatchers("/api/dashboard/**").access(onlyAllowedEmails())
         .anyRequest().denyAll()
       )
-      .oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt -> {}));
+      .oauth2ResourceServer(oauth2 -> oauth2.jwt());
 
     return http.build();
   }
 
   @Bean
-  AuthorizationManager<RequestAuthorizationContext> onlyAllowedSubs() {
+  AuthorizationManager<RequestAuthorizationContext> onlyAllowedEmails() {
     return (authenticationSupplier, context) -> {
-
       Authentication auth = authenticationSupplier.get();
-      if (auth == null || !auth.isAuthenticated()) {
-        return new AuthorizationDecision(false);
-      }
-
       if (!(auth instanceof JwtAuthenticationToken jwtAuth)) {
         return new AuthorizationDecision(false);
       }
 
       Jwt jwt = jwtAuth.getToken();
 
-      // "sub" is guaranteed by Auth0
-      String sub = jwt.getSubject();
+      // Requires "email" claim to exist in the ACCESS TOKEN
+      String email = jwt.getClaimAsString("email");
+      if (email == null) return new AuthorizationDecision(false);
 
-      return new AuthorizationDecision(ALLOWED_SUBS.contains(sub));
+      boolean allowed = ALLOWED_EMAILS.contains(email.toLowerCase());
+      return new AuthorizationDecision(allowed);
     };
   }
 }
