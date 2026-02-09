@@ -9,6 +9,8 @@ import org.springframework.web.bind.annotation.RestController;
 
 @CrossOrigin(origins = {
   "http://localhost:8888",
+  "http://localhost:5173",
+  "http://localhost:5174",
   "https://stepbystepclub.ca",
   "https://www.stepbystepclub.ca"
 })
@@ -16,17 +18,21 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api")
 public class ApiController {
 
+  private final Ga4Service ga4Service;
+
+  // ✅ Spring will inject this automatically
+  public ApiController(Ga4Service ga4Service) {
+    this.ga4Service = ga4Service;
+  }
+
   @GetMapping("/health")
   public Map<String, Object> health() {
     return Map.of("status", "ok");
   }
 
-  @GetMapping("/dashboard/metrics")
-  public Map<String, Object> metrics() {
-    return Map.of(
-      "visitors", 1240,
-      "leads", 38,
-      "conversionRate", 3.1
-    );
+  // ✅ This is what your React Dashboard fetches
+  @GetMapping("/dashboard/ga4Results")
+  public Map<String, Object> ga4Results() {
+    return ga4Service.getLast30DaysResults();
   }
 }
