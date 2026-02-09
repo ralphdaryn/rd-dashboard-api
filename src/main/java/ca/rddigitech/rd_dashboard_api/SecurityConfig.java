@@ -17,7 +17,6 @@ import org.springframework.security.web.access.intercept.RequestAuthorizationCon
 @Configuration
 public class SecurityConfig {
 
-  // ✅ Only these emails can access dashboard endpoints
   private static final Set<String> ALLOWED_EMAILS = Set.of(
     "stepxstepclub@gmail.com",
     "ralphdarync@gmail.com"
@@ -33,7 +32,8 @@ public class SecurityConfig {
         .requestMatchers("/api/dashboard/**").access(onlyAllowedEmails())
         .anyRequest().denyAll()
       )
-      .oauth2ResourceServer(oauth2 -> oauth2.jwt());
+      // ✅ avoids deprecated oauth2.jwt()
+      .oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt -> {}));
 
     return http.build();
   }
@@ -48,12 +48,10 @@ public class SecurityConfig {
 
       Jwt jwt = jwtAuth.getToken();
 
-      // Requires "email" claim to exist in the ACCESS TOKEN
       String email = jwt.getClaimAsString("email");
       if (email == null) return new AuthorizationDecision(false);
 
-      boolean allowed = ALLOWED_EMAILS.contains(email.toLowerCase());
-      return new AuthorizationDecision(allowed);
+      return new AuthorizationDecision(ALLOWED_EMAILS.contains(email.toLowerCase()));
     };
   }
 }
