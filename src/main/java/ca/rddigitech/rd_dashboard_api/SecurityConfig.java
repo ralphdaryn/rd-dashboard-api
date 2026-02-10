@@ -5,6 +5,7 @@ import java.util.Set;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.convert.converter.Converter;
 import org.springframework.http.HttpMethod;
 
 import org.springframework.security.authorization.AuthorizationDecision;
@@ -16,6 +17,8 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
+import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
 
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.access.intercept.RequestAuthorizationContext;
@@ -50,15 +53,39 @@ public class SecurityConfig {
         // ✅ Public health
         .requestMatchers("/api/health", "/api/health/**").permitAll()
 
-        // ✅ Protected dashboard endpoints
-        .requestMatchers("/api/dashboard/**").access(onlyAllowedEmails())
+        // ✅ TEMP DIAG: only require a valid JWT (NO email allowlist yet)
+        // If this works (200), then we flip back to .access(onlyAllowedEmails())
+        .requestMatchers("/api/dashboard/**").authenticated()
 
         .anyRequest().denyAll()
       )
-      // ✅ JWT validation
-      .oauth2ResourceServer(oauth2 -> oauth2.jwt(Customizer.withDefaults()));
+      // ✅ JWT validation + explicit scope mapping
+      .oauth2ResourceServer(oauth2 -> oauth2
+        .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter()))
+      )
+      // ✅ Make errors clearer (instead of confusing "insufficient_scope")
+      .exceptionHandling(eh -> eh
+        .authenticationEntryPoint((req, res, ex) -> res.sendError(401, "Unauthorized"))
+        .accessDeniedHandler((req, res, ex) -> res.sendError(403, "Forbidden"))
+      );
 
     return http.build();
+  }
+
+  /**
+   * ✅ Force Spring to read authorities from the "scope" claim.
+   * Auth0 access tokens commonly include: "scope": "openid profile email"
+   */
+  @Bean
+  Converter<Jwt, JwtAuthenticationToken> jwtAuthenticationConverter() {
+    JwtGrantedAuthoritiesConverter gac = new JwtGrantedAuthoritiesConverter();
+    gac.setAuthoritiesClaimName("scope");   // Auth0 uses "scope"
+    gac.setAuthorityPrefix("SCOPE_");       // Spring convention
+
+    JwtAuthenticationConverter converter = new JwtAuthenticationConverter();
+    converter.setJwtGrantedAuthoritiesConverter(gac);
+
+    return jwt -> (JwtAuthenticationToken) converter.convert(jwt);
   }
 
   // ✅ CORS config used by http.cors()
@@ -86,6 +113,13 @@ public class SecurityConfig {
     return source;
   }
 
+  /**
+   * ✅ Your original allowlist gate (we’ll re-enable after the diag passes).
+   * To re-enable, change:
+   *   .requestMatchers("/api/dashboard/**").authenticated()
+   * back to:
+   *   .requestMatchers("/api/dashboard/**").access(onlyAllowedEmails())
+   */
   @Bean
   AuthorizationManager<RequestAuthorizationContext> onlyAllowedEmails() {
     return (authenticationSupplier, context) -> {
