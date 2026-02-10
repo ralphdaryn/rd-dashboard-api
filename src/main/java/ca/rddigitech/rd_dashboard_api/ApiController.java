@@ -28,7 +28,9 @@ public class ApiController {
 
   @GetMapping("/health")
   public Map<String, Object> health() {
-    return Map.of("status", "ok", "version", "v-2026-02-09-SECURITY-TEST");
+    return Map.of(
+        "status", "ok",
+        "version", "DEPLOY_TEST_2026_02_09");
   }
 
   // ✅ This is what your React Dashboard fetches
