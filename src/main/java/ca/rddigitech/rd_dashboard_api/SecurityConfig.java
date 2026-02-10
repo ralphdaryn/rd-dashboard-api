@@ -20,12 +20,11 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.access.intercept.RequestAuthorizationContext;
-import org.springframework.security.web.servlet.util.matcher.MvcRequestMatcher;
+import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
 
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
-import org.springframework.web.servlet.handler.HandlerMappingIntrospector;
 
 @Configuration
 public class SecurityConfig {
@@ -38,46 +37,42 @@ public class SecurityConfig {
   private static final String EMAIL_CLAIM = "https://rddigitech.ca/email";
 
   @Bean
-  SecurityFilterChain filterChain(
-      HttpSecurity http,
-      HandlerMappingIntrospector introspector
-  ) throws Exception {
-
-    MvcRequestMatcher.Builder mvc = new MvcRequestMatcher.Builder(introspector);
-
+  SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
     http
       .cors(Customizer.withDefaults())
       .csrf(csrf -> csrf.disable())
       .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 
       .authorizeHttpRequests(auth -> auth
-        // ✅ Preflight
-        .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+        // ✅ Allow preflight
+        .requestMatchers(PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.OPTIONS, "/**"))
+        .permitAll()
 
         // ✅ Public health
-        .requestMatchers(mvc.pattern("/api/health")).permitAll()
-        .requestMatchers(mvc.pattern("/api/health/**")).permitAll()
+        .requestMatchers(PathPatternRequestMatcher.withDefaults().matcher("/api/health"))
+        .permitAll()
+        .requestMatchers(PathPatternRequestMatcher.withDefaults().matcher("/api/health/**"))
+        .permitAll()
 
-        // ✅ TEMP DIAG: only require valid JWT
-        .requestMatchers(mvc.pattern("/api/dashboard/**")).authenticated()
+        // ✅ TEMP DIAG: require ONLY a valid JWT for dashboard routes
+        // Once this returns 200, swap to .access(onlyAllowedEmails())
+        .requestMatchers(PathPatternRequestMatcher.withDefaults().matcher("/api/dashboard/**"))
+        .authenticated()
 
-        // ❌ Everything else blocked
         .anyRequest().denyAll()
       )
 
       .oauth2ResourceServer(oauth2 -> oauth2.jwt(Customizer.withDefaults()))
 
+      // ✅ Cleaner errors
       .exceptionHandling(eh -> eh
-        .authenticationEntryPoint((req, res, ex) ->
-          res.sendError(401, "Unauthorized"))
-        .accessDeniedHandler((req, res, ex) ->
-          res.sendError(403, "Forbidden"))
+        .authenticationEntryPoint((req, res, ex) -> res.sendError(401, "Unauthorized"))
+        .accessDeniedHandler((req, res, ex) -> res.sendError(403, "Forbidden"))
       );
 
     return http.build();
   }
 
-  // ✅ CORS
   @Bean
   CorsConfigurationSource corsConfigurationSource() {
     CorsConfiguration config = new CorsConfiguration();
@@ -100,7 +95,6 @@ public class SecurityConfig {
     return source;
   }
 
-  // ✅ Email allowlist (used AFTER diag passes)
   @Bean
   AuthorizationManager<RequestAuthorizationContext> onlyAllowedEmails() {
     return (authenticationSupplier, context) -> {
@@ -112,14 +106,10 @@ public class SecurityConfig {
       Jwt jwt = jwtAuth.getToken();
 
       String email = jwt.getClaimAsString(EMAIL_CLAIM);
-      if (email == null) {
-        email = jwt.getClaimAsString("email");
-      }
+      if (email == null) email = jwt.getClaimAsString("email");
       if (email == null) return new AuthorizationDecision(false);
 
-      return new AuthorizationDecision(
-        ALLOWED_EMAILS.contains(email.toLowerCase())
-      );
+      return new AuthorizationDecision(ALLOWED_EMAILS.contains(email.toLowerCase()));
     };
   }
 }
