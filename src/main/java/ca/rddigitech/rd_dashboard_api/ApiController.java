@@ -6,13 +6,14 @@ import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.http.ResponseEntity;
 
 @CrossOrigin(origins = {
-  "http://localhost:8888",
-  "http://localhost:5173",
-  "http://localhost:5174",
-  "https://stepbystepclub.ca",
-  "https://www.stepbystepclub.ca"
+    "http://localhost:8888",
+    "http://localhost:5173",
+    "http://localhost:5174",
+    "https://stepbystepclub.ca",
+    "https://www.stepbystepclub.ca"
 })
 @RestController
 @RequestMapping("/api")
@@ -32,7 +33,10 @@ public class ApiController {
 
   // ✅ This is what your React Dashboard fetches
   @GetMapping("/dashboard/ga4Results")
-  public Map<String, Object> ga4Results() {
-    return ga4Service.getLast30DaysResults();
+  public ResponseEntity<Map<String, Object>> ga4Results() {
+    return ResponseEntity
+        .ok()
+        .header("X-API-VERSION", "ga4Results-controller-hit-v1")
+        .body(ga4Service.getLast30DaysResults());
   }
 }
