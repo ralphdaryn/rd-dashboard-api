@@ -20,11 +20,12 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.access.intercept.RequestAuthorizationContext;
-import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
+import org.springframework.security.web.servlet.util.matcher.MvcRequestMatcher;
 
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+import org.springframework.web.servlet.handler.HandlerMappingIntrospector;
 
 @Configuration
 public class SecurityConfig {
@@ -34,47 +35,49 @@ public class SecurityConfig {
     "ralphdarync@gmail.com"
   );
 
-  // ✅ Your Auth0 Action claim
   private static final String EMAIL_CLAIM = "https://rddigitech.ca/email";
 
   @Bean
-  SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+  SecurityFilterChain filterChain(
+      HttpSecurity http,
+      HandlerMappingIntrospector introspector
+  ) throws Exception {
+
+    MvcRequestMatcher.Builder mvc = new MvcRequestMatcher.Builder(introspector);
+
     http
       .cors(Customizer.withDefaults())
       .csrf(csrf -> csrf.disable())
       .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 
       .authorizeHttpRequests(auth -> auth
-        // ✅ Allow preflight
-        .requestMatchers(AntPathRequestMatcher.antMatcher(HttpMethod.OPTIONS, "/**")).permitAll()
+        // ✅ Preflight
+        .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
 
         // ✅ Public health
-        .requestMatchers(AntPathRequestMatcher.antMatcher("/api/health"))
-        .permitAll()
-        .requestMatchers(AntPathRequestMatcher.antMatcher("/api/health/**"))
-        .permitAll()
+        .requestMatchers(mvc.pattern("/api/health")).permitAll()
+        .requestMatchers(mvc.pattern("/api/health/**")).permitAll()
 
-        // ✅ TEMP DIAG: require ONLY a valid JWT for dashboard endpoints
-        // If this becomes 200, switch back to the allowlist line below.
-        .requestMatchers(AntPathRequestMatcher.antMatcher("/api/dashboard/**"))
-        .authenticated()
+        // ✅ TEMP DIAG: only require valid JWT
+        .requestMatchers(mvc.pattern("/api/dashboard/**")).authenticated()
 
-        // ❗ Anything else blocked
+        // ❌ Everything else blocked
         .anyRequest().denyAll()
       )
 
       .oauth2ResourceServer(oauth2 -> oauth2.jwt(Customizer.withDefaults()))
 
-      // ✅ Cleaner errors
       .exceptionHandling(eh -> eh
-        .authenticationEntryPoint((req, res, ex) -> res.sendError(401, "Unauthorized"))
-        .accessDeniedHandler((req, res, ex) -> res.sendError(403, "Forbidden"))
+        .authenticationEntryPoint((req, res, ex) ->
+          res.sendError(401, "Unauthorized"))
+        .accessDeniedHandler((req, res, ex) ->
+          res.sendError(403, "Forbidden"))
       );
 
     return http.build();
   }
 
-  // ✅ CORS config used by http.cors()
+  // ✅ CORS
   @Bean
   CorsConfigurationSource corsConfigurationSource() {
     CorsConfiguration config = new CorsConfiguration();
@@ -97,7 +100,7 @@ public class SecurityConfig {
     return source;
   }
 
-  // ✅ Your allowlist gate (we will re-enable AFTER the diag works)
+  // ✅ Email allowlist (used AFTER diag passes)
   @Bean
   AuthorizationManager<RequestAuthorizationContext> onlyAllowedEmails() {
     return (authenticationSupplier, context) -> {
@@ -114,18 +117,9 @@ public class SecurityConfig {
       }
       if (email == null) return new AuthorizationDecision(false);
 
-      return new AuthorizationDecision(ALLOWED_EMAILS.contains(email.toLowerCase()));
+      return new AuthorizationDecision(
+        ALLOWED_EMAILS.contains(email.toLowerCase())
+      );
     };
   }
-
-  /*
-    ✅ AFTER you confirm ga4Results returns 200 with `.authenticated()`,
-    change this line:
-
-      .authenticated()
-
-    to this:
-
-      .access(onlyAllowedEmails())
-  */
 }
