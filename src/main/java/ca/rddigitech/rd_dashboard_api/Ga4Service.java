@@ -57,6 +57,8 @@ public class Ga4Service {
 
     payload.put("users30d", kpis.users30d);
     payload.put("newUsers30d", kpis.newUsers30d);
+
+    // ✅ Keep your existing key name so your React UI doesn’t break
     payload.put("avgEngagementTime", kpis.avgEngagementTimePretty);
 
     payload.put("contactSubmits", contactSubmits);
@@ -75,23 +77,25 @@ public class Ga4Service {
         .addDateRanges(DateRange.newBuilder().setStartDate("30daysAgo").setEndDate("today"))
         .addMetrics(Metric.newBuilder().setName("activeUsers"))
         .addMetrics(Metric.newBuilder().setName("newUsers"))
-        .addMetrics(Metric.newBuilder().setName("averageEngagementTimePerSession"))
+
+        // ✅ FIX: valid GA4 Data API metric (seconds)
+        .addMetrics(Metric.newBuilder().setName("averageSessionDuration"))
         .build();
 
     RunReportResponse response = client.runReport(request);
 
     int users = 0;
     int newUsers = 0;
-    double avgEngagementSeconds = 0;
+    double avgSessionDurationSeconds = 0;
 
     if (response.getRowsCount() > 0) {
       Row row = response.getRows(0);
       users = parseIntSafe(row.getMetricValues(0).getValue());
       newUsers = parseIntSafe(row.getMetricValues(1).getValue());
-      avgEngagementSeconds = parseDoubleSafe(row.getMetricValues(2).getValue());
+      avgSessionDurationSeconds = parseDoubleSafe(row.getMetricValues(2).getValue());
     }
 
-    return new Kpis(users, newUsers, secondsToPretty(avgEngagementSeconds));
+    return new Kpis(users, newUsers, secondsToPretty(avgSessionDurationSeconds));
   }
 
   private List<Map<String, Object>> fetchTopSources(int limit) {
