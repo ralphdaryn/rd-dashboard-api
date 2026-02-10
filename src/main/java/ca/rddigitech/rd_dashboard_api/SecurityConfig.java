@@ -32,30 +32,30 @@ public class SecurityConfig {
     "ralphdarync@gmail.com"
   );
 
-  // ✅ Must match the namespace used in your Auth0 Action
+  // ✅ If your Auth0 Action injects this, we’ll use it
   private static final String EMAIL_CLAIM = "https://rddigitech.ca/email";
 
   @Bean
   SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
     http
-      // ✅ IMPORTANT: enable CORS so the browser can call your API
+      // ✅ CORS enabled (needed for browser calls)
       .cors(Customizer.withDefaults())
 
       .csrf(csrf -> csrf.disable())
       .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
       .authorizeHttpRequests(auth -> auth
-
-        // ✅ IMPORTANT: allow CORS preflight requests (OPTIONS) to pass
+        // ✅ Allow preflight
         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
 
-        // ✅ public endpoint
+        // ✅ Public health
         .requestMatchers("/api/health", "/api/health/**").permitAll()
 
-        // ✅ protected endpoints
+        // ✅ Protected dashboard endpoints
         .requestMatchers("/api/dashboard/**").access(onlyAllowedEmails())
 
         .anyRequest().denyAll()
       )
+      // ✅ JWT validation
       .oauth2ResourceServer(oauth2 -> oauth2.jwt(Customizer.withDefaults()));
 
     return http.build();
@@ -66,7 +66,6 @@ public class SecurityConfig {
   CorsConfigurationSource corsConfigurationSource() {
     CorsConfiguration config = new CorsConfiguration();
 
-    // ✅ allow your frontend origins
     config.setAllowedOrigins(List.of(
       "https://stepbystepclub.ca",
       "https://www.stepbystepclub.ca",
@@ -75,16 +74,11 @@ public class SecurityConfig {
       "http://localhost:5174"
     ));
 
-    // ✅ allow the browser methods + preflight
     config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
-
-    // ✅ allow headers your React app sends (Authorization triggers preflight)
     config.setAllowedHeaders(List.of("Authorization", "Content-Type"));
-
-    // optional (usually not needed, but harmless)
     config.setExposedHeaders(List.of("Authorization"));
 
-    // ✅ keep false unless you’re doing cookies (you’re using Bearer tokens)
+    // ✅ You’re using Bearer tokens (not cookies) so keep false
     config.setAllowCredentials(false);
 
     UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
@@ -102,8 +96,14 @@ public class SecurityConfig {
 
       Jwt jwt = jwtAuth.getToken();
 
-      // ✅ Read the namespaced email claim injected by Auth0 Action
+      // ✅ 1) Try your namespaced claim (if Action added it)
       String email = jwt.getClaimAsString(EMAIL_CLAIM);
+
+      // ✅ 2) Fallback to standard Auth0 claim
+      if (email == null) {
+        email = jwt.getClaimAsString("email");
+      }
+
       if (email == null) return new AuthorizationDecision(false);
 
       return new AuthorizationDecision(ALLOWED_EMAILS.contains(email.toLowerCase()));
