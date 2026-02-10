@@ -22,6 +22,9 @@ public class SecurityConfig {
     "ralphdarync@gmail.com"
   );
 
+  // ✅ Must match the namespace used in your Auth0 Action
+  private static final String EMAIL_CLAIM = "https://rddigitech.ca/email";
+
   @Bean
   SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
     http
@@ -32,7 +35,6 @@ public class SecurityConfig {
         .requestMatchers("/api/dashboard/**").access(onlyAllowedEmails())
         .anyRequest().denyAll()
       )
-      // ✅ avoids deprecated oauth2.jwt()
       .oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt -> {}));
 
     return http.build();
@@ -48,7 +50,8 @@ public class SecurityConfig {
 
       Jwt jwt = jwtAuth.getToken();
 
-      String email = jwt.getClaimAsString("email");
+      // ✅ Read the namespaced email claim injected by Auth0 Action
+      String email = jwt.getClaimAsString(EMAIL_CLAIM);
       if (email == null) return new AuthorizationDecision(false);
 
       return new AuthorizationDecision(ALLOWED_EMAILS.contains(email.toLowerCase()));
