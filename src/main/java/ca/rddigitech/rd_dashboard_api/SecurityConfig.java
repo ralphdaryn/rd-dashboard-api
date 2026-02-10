@@ -20,6 +20,7 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.access.intercept.RequestAuthorizationContext;
+
 import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
 
 import org.springframework.web.cors.CorsConfiguration;
@@ -34,10 +35,13 @@ public class SecurityConfig {
     "ralphdarync@gmail.com"
   );
 
+  // ✅ Your Auth0 Action claim (token shows this exists)
   private static final String EMAIL_CLAIM = "https://rddigitech.ca/email";
 
   @Bean
   SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+    var ppm = PathPatternRequestMatcher.withDefaults();
+
     http
       .cors(Customizer.withDefaults())
       .csrf(csrf -> csrf.disable())
@@ -45,21 +49,18 @@ public class SecurityConfig {
 
       .authorizeHttpRequests(auth -> auth
         // ✅ Allow preflight
-        .requestMatchers(PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.OPTIONS, "/**"))
-        .permitAll()
+        .requestMatchers(ppm.matcher(HttpMethod.OPTIONS, "/**")).permitAll()
 
         // ✅ Public health
-        .requestMatchers(PathPatternRequestMatcher.withDefaults().matcher("/api/health"))
-        .permitAll()
-        .requestMatchers(PathPatternRequestMatcher.withDefaults().matcher("/api/health/**"))
-        .permitAll()
+        .requestMatchers(ppm.matcher("/api/health")).permitAll()
+        .requestMatchers(ppm.matcher("/api/health/**")).permitAll()
 
-        // ✅ TEMP DIAG: require ONLY a valid JWT for dashboard routes
-        // Once this returns 200, swap to .access(onlyAllowedEmails())
-        .requestMatchers(PathPatternRequestMatcher.withDefaults().matcher("/api/dashboard/**"))
-        .authenticated()
+        // ✅ TEMP DIAG: dashboard needs a valid JWT
+        .requestMatchers(ppm.matcher("/api/dashboard/**")).authenticated()
 
-        .anyRequest().denyAll()
+        // ✅ TEMP DIAG: fallback also requires JWT (instead of denyAll)
+        // This tells us if matchers were the problem.
+        .anyRequest().authenticated()
       )
 
       .oauth2ResourceServer(oauth2 -> oauth2.jwt(Customizer.withDefaults()))
@@ -73,6 +74,7 @@ public class SecurityConfig {
     return http.build();
   }
 
+  // ✅ CORS
   @Bean
   CorsConfigurationSource corsConfigurationSource() {
     CorsConfiguration config = new CorsConfiguration();
@@ -95,6 +97,7 @@ public class SecurityConfig {
     return source;
   }
 
+  // ✅ Keep this for later (we’ll re-enable after the diag passes)
   @Bean
   AuthorizationManager<RequestAuthorizationContext> onlyAllowedEmails() {
     return (authenticationSupplier, context) -> {
