@@ -20,7 +20,6 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.access.intercept.RequestAuthorizationContext;
-
 import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
 
 import org.springframework.web.cors.CorsConfiguration;
@@ -30,12 +29,13 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 @Configuration
 public class SecurityConfig {
 
+  // ✅ Emails allowed to view dashboards
   private static final Set<String> ALLOWED_EMAILS = Set.of(
     "stepxstepclub@gmail.com",
     "ralphdarync@gmail.com"
   );
 
-  // ✅ Your Auth0 Action claim (token shows this exists)
+  // ✅ Custom Auth0 claim (confirmed in token)
   private static final String EMAIL_CLAIM = "https://rddigitech.ca/email";
 
   @Bean
@@ -43,38 +43,51 @@ public class SecurityConfig {
     var ppm = PathPatternRequestMatcher.withDefaults();
 
     http
+      // 🌍 CORS
       .cors(Customizer.withDefaults())
-      .csrf(csrf -> csrf.disable())
-      .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 
+      // 🔒 Stateless API
+      .csrf(csrf -> csrf.disable())
+      .sessionManagement(sm ->
+        sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
+      )
+
+      // 🔐 Authorization rules
       .authorizeHttpRequests(auth -> auth
-        // ✅ Allow preflight
+        // Preflight
         .requestMatchers(ppm.matcher(HttpMethod.OPTIONS, "/**")).permitAll()
 
-        // ✅ Public health
+        // Public health check
         .requestMatchers(ppm.matcher("/api/health")).permitAll()
         .requestMatchers(ppm.matcher("/api/health/**")).permitAll()
 
-        // ✅ TEMP DIAG: dashboard needs a valid JWT
-        .requestMatchers(ppm.matcher("/api/dashboard/**")).authenticated()
+        // 🔐 Dashboard = email allowlist
+        .requestMatchers(ppm.matcher("/api/dashboard/**"))
+          .access(onlyAllowedEmails())
 
-        // ✅ TEMP DIAG: fallback also requires JWT (instead of denyAll)
-        // This tells us if matchers were the problem.
-        .anyRequest().authenticated()
+        // Everything else blocked
+        .anyRequest().denyAll()
       )
 
-      .oauth2ResourceServer(oauth2 -> oauth2.jwt(Customizer.withDefaults()))
+      // 🔑 JWT validation (Auth0)
+      .oauth2ResourceServer(oauth2 ->
+        oauth2.jwt(Customizer.withDefaults())
+      )
 
-      // ✅ Cleaner errors
+      // ❗ Clean error responses
       .exceptionHandling(eh -> eh
-        .authenticationEntryPoint((req, res, ex) -> res.sendError(401, "Unauthorized"))
-        .accessDeniedHandler((req, res, ex) -> res.sendError(403, "Forbidden"))
+        .authenticationEntryPoint(
+          (req, res, ex) -> res.sendError(401, "Unauthorized")
+        )
+        .accessDeniedHandler(
+          (req, res, ex) -> res.sendError(403, "Forbidden")
+        )
       );
 
     return http.build();
   }
 
-  // ✅ CORS
+  // 🌍 CORS configuration
   @Bean
   CorsConfigurationSource corsConfigurationSource() {
     CorsConfiguration config = new CorsConfiguration();
@@ -87,32 +100,51 @@ public class SecurityConfig {
       "http://localhost:5174"
     ));
 
-    config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
-    config.setAllowedHeaders(List.of("Authorization", "Content-Type"));
+    config.setAllowedMethods(
+      List.of("GET", "POST", "PUT", "DELETE", "OPTIONS")
+    );
+
+    config.setAllowedHeaders(
+      List.of("Authorization", "Content-Type")
+    );
+
     config.setExposedHeaders(List.of("Authorization"));
     config.setAllowCredentials(false);
 
-    UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+    UrlBasedCorsConfigurationSource source =
+      new UrlBasedCorsConfigurationSource();
+
     source.registerCorsConfiguration("/**", config);
     return source;
   }
 
-  // ✅ Keep this for later (we’ll re-enable after the diag passes)
+  // 🔐 Email allowlist authorization
   @Bean
   AuthorizationManager<RequestAuthorizationContext> onlyAllowedEmails() {
     return (authenticationSupplier, context) -> {
       Authentication auth = authenticationSupplier.get();
+
       if (!(auth instanceof JwtAuthenticationToken jwtAuth)) {
         return new AuthorizationDecision(false);
       }
 
       Jwt jwt = jwtAuth.getToken();
 
+      // 1️⃣ Custom Auth0 claim
       String email = jwt.getClaimAsString(EMAIL_CLAIM);
-      if (email == null) email = jwt.getClaimAsString("email");
-      if (email == null) return new AuthorizationDecision(false);
 
-      return new AuthorizationDecision(ALLOWED_EMAILS.contains(email.toLowerCase()));
+      // 2️⃣ Fallback (just in case)
+      if (email == null) {
+        email = jwt.getClaimAsString("email");
+      }
+
+      if (email == null) {
+        return new AuthorizationDecision(false);
+      }
+
+      return new AuthorizationDecision(
+        ALLOWED_EMAILS.contains(email.toLowerCase())
+      );
     };
   }
 }
