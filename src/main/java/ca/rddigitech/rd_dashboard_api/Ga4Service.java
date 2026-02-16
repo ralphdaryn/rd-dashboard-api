@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 
@@ -29,28 +30,50 @@ public class Ga4Service {
     this.client = client;
   }
 
-  private String property() {
-    String id = System.getenv("GA4_PROPERTY_ID");
-    if (id == null || id.isBlank()) {
-      throw new IllegalStateException("GA4_PROPERTY_ID env var is missing.");
+  private static String normalizeClientKey(String v) {
+    return Optional.ofNullable(v).orElse("")
+        .trim()
+        .toLowerCase(Locale.ROOT);
+  }
+
+  private String property(String clientKey) {
+    String key = normalizeClientKey(clientKey);
+
+    // ✅ Map clientKey -> env var name
+    String envName = switch (key) {
+      case "stepbystep", "stepxstep", "stepbystepclub" -> "GA4_PROPERTY_ID_STEPBYSTEP";
+      case "ksnap", "ksnapstudio", "k-snap" -> "GA4_PROPERTY_ID_KSNAPSTUDIO";
+      default -> null;
+    };
+
+    if (envName == null) {
+      throw new IllegalArgumentException("Unknown client key: " + clientKey);
     }
+
+    String id = System.getenv(envName);
+    if (id == null || id.isBlank()) {
+      throw new IllegalStateException(envName + " env var is missing.");
+    }
+
     return "properties/" + id.trim();
   }
 
-  // ✅ SAME JSON shape your Dashboard.js expects
-  public Map<String, Object> getLast30DaysResults() {
-    Kpis kpis = fetchKpis();
+  // ✅ SAME JSON shape your Dashboard.js expects (now per-client)
+  public Map<String, Object> getLast30DaysResults(String clientKey) {
+    String prop = property(clientKey);
 
-    List<Map<String, Object>> topSources = fetchTopSources(8);
+    Kpis kpis = fetchKpis(prop);
+
+    List<Map<String, Object>> topSources = fetchTopSources(prop, 8);
     String topTrafficSource = topSources.isEmpty()
         ? "(not set)"
         : String.valueOf(topSources.get(0).get("source"));
 
-    List<Map<String, Object>> topPages = fetchTopPages(12);
+    List<Map<String, Object>> topPages = fetchTopPages(prop, 12);
 
     // These will be 0 unless you created these GA4 events
-    int contactSubmits = fetchEventCount("contact_submit");
-    int bookingClicks = fetchEventCount("booking_click");
+    int contactSubmits = fetchEventCount(prop, "contact_submit");
+    int bookingClicks = fetchEventCount(prop, "booking_click");
 
     Map<String, Object> payload = new HashMap<>();
     payload.put("rangeLabel", "Last 30 days");
@@ -68,17 +91,18 @@ public class Ga4Service {
     payload.put("topSources", topSources);
     payload.put("topPages", topPages);
 
+    // Optional (safe): helps debugging
+    payload.put("client", normalizeClientKey(clientKey));
+
     return payload;
   }
 
-  private Kpis fetchKpis() {
+  private Kpis fetchKpis(String prop) {
     RunReportRequest request = RunReportRequest.newBuilder()
-        .setProperty(property())
+        .setProperty(prop)
         .addDateRanges(DateRange.newBuilder().setStartDate("30daysAgo").setEndDate("today"))
         .addMetrics(Metric.newBuilder().setName("activeUsers"))
         .addMetrics(Metric.newBuilder().setName("newUsers"))
-
-        // ✅ FIX: valid GA4 Data API metric (seconds)
         .addMetrics(Metric.newBuilder().setName("averageSessionDuration"))
         .build();
 
@@ -98,9 +122,9 @@ public class Ga4Service {
     return new Kpis(users, newUsers, secondsToPretty(avgSessionDurationSeconds));
   }
 
-  private List<Map<String, Object>> fetchTopSources(int limit) {
+  private List<Map<String, Object>> fetchTopSources(String prop, int limit) {
     RunReportRequest request = RunReportRequest.newBuilder()
-        .setProperty(property())
+        .setProperty(prop)
         .addDateRanges(DateRange.newBuilder().setStartDate("30daysAgo").setEndDate("today"))
         .addDimensions(Dimension.newBuilder().setName("sessionSourceMedium"))
         .addMetrics(Metric.newBuilder().setName("sessions"))
@@ -123,9 +147,9 @@ public class Ga4Service {
     return out;
   }
 
-  private List<Map<String, Object>> fetchTopPages(int limit) {
+  private List<Map<String, Object>> fetchTopPages(String prop, int limit) {
     RunReportRequest request = RunReportRequest.newBuilder()
-        .setProperty(property())
+        .setProperty(prop)
         .addDateRanges(DateRange.newBuilder().setStartDate("30daysAgo").setEndDate("today"))
         .addDimensions(Dimension.newBuilder().setName("pagePath"))
         .addMetrics(Metric.newBuilder().setName("screenPageViews"))
@@ -146,7 +170,7 @@ public class Ga4Service {
     return out;
   }
 
-  private int fetchEventCount(String eventName) {
+  private int fetchEventCount(String prop, String eventName) {
     Filter filter = Filter.newBuilder()
         .setFieldName("eventName")
         .setStringFilter(Filter.StringFilter.newBuilder()
@@ -157,7 +181,7 @@ public class Ga4Service {
     FilterExpression exp = FilterExpression.newBuilder().setFilter(filter).build();
 
     RunReportRequest request = RunReportRequest.newBuilder()
-        .setProperty(property())
+        .setProperty(prop)
         .addDateRanges(DateRange.newBuilder().setStartDate("30daysAgo").setEndDate("today"))
         .addMetrics(Metric.newBuilder().setName("eventCount"))
         .setDimensionFilter(exp)
