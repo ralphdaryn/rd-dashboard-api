@@ -33,10 +33,7 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 @Configuration
 public class SecurityConfig {
 
-  // ✅ Custom Auth0 claim (confirmed in token)
   private static final String EMAIL_CLAIM = "https://rddigitech.ca/email";
-
-  // ✅ Always allow you
   private static final String OWNER_EMAIL = "ralphdarync@gmail.com";
 
   @Bean
@@ -55,13 +52,17 @@ public class SecurityConfig {
         .requestMatchers(ppm.matcher("/api/health")).permitAll()
         .requestMatchers(ppm.matcher("/api/health/**")).permitAll()
 
-        // ✅ StepByStep dashboards (email allowlist from env)
+        // StepByStep
         .requestMatchers(ppm.matcher("/api/dashboard/stepbystep/**"))
           .access(onlyAllowedEmailsFromEnv("ALLOWED_EMAILS_STEPBYSTEP"))
 
-        // ✅ KSnap dashboards (email allowlist from env)
+        // KSnap Studio
         .requestMatchers(ppm.matcher("/api/dashboard/ksnapstudio/**"))
           .access(onlyAllowedEmailsFromEnv("ALLOWED_EMAILS_KSNAPSTUDIO"))
+
+        // ✅ RD Digitech
+        .requestMatchers(ppm.matcher("/api/dashboard/rddigitech/**"))
+          .access(onlyAllowedEmailsFromEnv("ALLOWED_EMAILS_RDDIGITECH"))
 
         .anyRequest().denyAll()
       )
@@ -76,21 +77,23 @@ public class SecurityConfig {
     return http.build();
   }
 
-  // ✅ CORS from env var: CORS_ALLOWED_ORIGINS (comma-separated)
   @Bean
   CorsConfigurationSource corsConfigurationSource() {
     CorsConfiguration config = new CorsConfiguration();
 
     List<String> origins = parseCsvEnvList("CORS_ALLOWED_ORIGINS");
 
-    // If env missing, keep safe defaults (your old ones)
     if (origins.isEmpty()) {
       origins = List.of(
         "https://stepbystepclub.ca",
         "https://www.stepbystepclub.ca",
+        "https://ksnapstudio.ca",
+        "https://www.ksnapstudio.ca",
+        "https://rddigitech.ca",
+        "https://www.rddigitech.ca",
         "http://localhost:5173",
-        "http://localhost:8888",
-        "http://localhost:5174"
+        "http://localhost:5174",
+        "http://localhost:8888"
       );
     }
 
@@ -105,14 +108,11 @@ public class SecurityConfig {
     return source;
   }
 
-  // 🔐 Authorization manager that checks email against env allowlist
   AuthorizationManager<RequestAuthorizationContext> onlyAllowedEmailsFromEnv(String envKey) {
     final Set<String> allow = new HashSet<>();
 
-    // ✅ always include you
     allow.add(OWNER_EMAIL.toLowerCase(Locale.ROOT));
 
-    // ✅ include env list
     for (String e : parseCsvEnvList(envKey)) {
       allow.add(e.toLowerCase(Locale.ROOT));
     }

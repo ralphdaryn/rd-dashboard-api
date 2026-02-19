@@ -4,6 +4,7 @@ import java.util.Map;
 
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -25,16 +26,15 @@ public class ApiController {
       "hasServiceJson", serviceJson != null && !serviceJson.isBlank(),
       "serviceJsonLength", serviceJson == null ? 0 : serviceJson.length(),
       "hasStepByStepPropertyId", System.getenv("GA4_PROPERTY_ID_STEPBYSTEP") != null,
-      "hasKsnapStudioPropertyId", System.getenv("GA4_PROPERTY_ID_KSNAPSTUDIO") != null
+      "hasKsnapStudioPropertyId", System.getenv("GA4_PROPERTY_ID_KSNAPSTUDIO") != null,
+      "hasRdDigitechPropertyId", System.getenv("GA4_PROPERTY_ID_RDDIGITECH") != null
     );
   }
 
-  // ✅ StepByStep
   @GetMapping("/dashboard/stepbystep/ga4Results")
-  public Object ga4ResultsStepByStep() {
+  public Object ga4ResultsStepByStep(@RequestParam(defaultValue = "30") int days) {
     try {
-      // pass a clean client key (not the env var name)
-      return ga4Service.getLast30DaysResults("stepbystep");
+      return ga4Service.getResults("stepbystep", days);
     } catch (Exception e) {
       return Map.of(
         "error", "ga4Results failed",
@@ -45,15 +45,29 @@ public class ApiController {
     }
   }
 
-  // ✅ KSnap Studio
   @GetMapping("/dashboard/ksnapstudio/ga4Results")
-  public Object ga4ResultsKsnapStudio() {
+  public Object ga4ResultsKsnapStudio(@RequestParam(defaultValue = "30") int days) {
     try {
-      return ga4Service.getLast30DaysResults("ksnapstudio");
+      return ga4Service.getResults("ksnapstudio", days);
     } catch (Exception e) {
       return Map.of(
         "error", "ga4Results failed",
         "client", "ksnapstudio",
+        "type", e.getClass().getName(),
+        "message", String.valueOf(e.getMessage())
+      );
+    }
+  }
+
+  // ✅ RD Digitech
+  @GetMapping("/dashboard/rddigitech/ga4Results")
+  public Object ga4ResultsRdDigitech(@RequestParam(defaultValue = "30") int days) {
+    try {
+      return ga4Service.getResults("rddigitech", days);
+    } catch (Exception e) {
+      return Map.of(
+        "error", "ga4Results failed",
+        "client", "rddigitech",
         "type", e.getClass().getName(),
         "message", String.valueOf(e.getMessage())
       );

@@ -43,6 +43,7 @@ public class Ga4Service {
     String envName = switch (key) {
       case "stepbystep", "stepxstep", "stepbystepclub" -> "GA4_PROPERTY_ID_STEPBYSTEP";
       case "ksnap", "ksnapstudio", "k-snap" -> "GA4_PROPERTY_ID_KSNAPSTUDIO";
+      case "rddigitech", "rd", "rd-digitech", "rddigitaltech" -> "GA4_PROPERTY_ID_RDDIGITECH";
       default -> null;
     };
 
@@ -58,31 +59,31 @@ public class Ga4Service {
     return "properties/" + id.trim();
   }
 
-  // ✅ SAME JSON shape your Dashboard.js expects (now per-client)
-  public Map<String, Object> getLast30DaysResults(String clientKey) {
+  // ✅ supports days selector in UI
+  public Map<String, Object> getResults(String clientKey, int days) {
     String prop = property(clientKey);
+    int safeDays = Math.max(1, Math.min(days, 365));
+    String start = safeDays + "daysAgo";
 
-    Kpis kpis = fetchKpis(prop);
+    Kpis kpis = fetchKpis(prop, start);
 
-    List<Map<String, Object>> topSources = fetchTopSources(prop, 8);
+    List<Map<String, Object>> topSources = fetchTopSources(prop, start, 8);
     String topTrafficSource = topSources.isEmpty()
         ? "(not set)"
         : String.valueOf(topSources.get(0).get("source"));
 
-    List<Map<String, Object>> topPages = fetchTopPages(prop, 12);
+    List<Map<String, Object>> topPages = fetchTopPages(prop, start, 12);
 
-    // These will be 0 unless you created these GA4 events
-    int contactSubmits = fetchEventCount(prop, "contact_submit");
-    int bookingClicks = fetchEventCount(prop, "booking_click");
+    int contactSubmits = fetchEventCount(prop, start, "contact_submit");
+    int bookingClicks = fetchEventCount(prop, start, "booking_click");
 
     Map<String, Object> payload = new HashMap<>();
-    payload.put("rangeLabel", "Last 30 days");
+    payload.put("rangeLabel", "Last " + safeDays + " days");
 
-    payload.put("users30d", kpis.users30d);
-    payload.put("newUsers30d", kpis.newUsers30d);
-
-    // ✅ Keep your existing key name so your React UI doesn’t break
-    payload.put("avgEngagementTime", kpis.avgEngagementTimePretty);
+    // Keep same keys your UI expects
+    payload.put("users30d", kpis.users);
+    payload.put("newUsers30d", kpis.newUsers);
+    payload.put("avgEngagementTime", kpis.avgSessionDurationPretty);
 
     payload.put("contactSubmits", contactSubmits);
     payload.put("bookingClicks", bookingClicks);
@@ -91,16 +92,14 @@ public class Ga4Service {
     payload.put("topSources", topSources);
     payload.put("topPages", topPages);
 
-    // Optional (safe): helps debugging
     payload.put("client", normalizeClientKey(clientKey));
-
     return payload;
   }
 
-  private Kpis fetchKpis(String prop) {
+  private Kpis fetchKpis(String prop, String startDate) {
     RunReportRequest request = RunReportRequest.newBuilder()
         .setProperty(prop)
-        .addDateRanges(DateRange.newBuilder().setStartDate("30daysAgo").setEndDate("today"))
+        .addDateRanges(DateRange.newBuilder().setStartDate(startDate).setEndDate("today"))
         .addMetrics(Metric.newBuilder().setName("activeUsers"))
         .addMetrics(Metric.newBuilder().setName("newUsers"))
         .addMetrics(Metric.newBuilder().setName("averageSessionDuration"))
@@ -122,10 +121,10 @@ public class Ga4Service {
     return new Kpis(users, newUsers, secondsToPretty(avgSessionDurationSeconds));
   }
 
-  private List<Map<String, Object>> fetchTopSources(String prop, int limit) {
+  private List<Map<String, Object>> fetchTopSources(String prop, String startDate, int limit) {
     RunReportRequest request = RunReportRequest.newBuilder()
         .setProperty(prop)
-        .addDateRanges(DateRange.newBuilder().setStartDate("30daysAgo").setEndDate("today"))
+        .addDateRanges(DateRange.newBuilder().setStartDate(startDate).setEndDate("today"))
         .addDimensions(Dimension.newBuilder().setName("sessionSourceMedium"))
         .addMetrics(Metric.newBuilder().setName("sessions"))
         .addOrderBys(OrderBy.newBuilder()
@@ -147,10 +146,10 @@ public class Ga4Service {
     return out;
   }
 
-  private List<Map<String, Object>> fetchTopPages(String prop, int limit) {
+  private List<Map<String, Object>> fetchTopPages(String prop, String startDate, int limit) {
     RunReportRequest request = RunReportRequest.newBuilder()
         .setProperty(prop)
-        .addDateRanges(DateRange.newBuilder().setStartDate("30daysAgo").setEndDate("today"))
+        .addDateRanges(DateRange.newBuilder().setStartDate(startDate).setEndDate("today"))
         .addDimensions(Dimension.newBuilder().setName("pagePath"))
         .addMetrics(Metric.newBuilder().setName("screenPageViews"))
         .addOrderBys(OrderBy.newBuilder()
@@ -170,7 +169,7 @@ public class Ga4Service {
     return out;
   }
 
-  private int fetchEventCount(String prop, String eventName) {
+  private int fetchEventCount(String prop, String startDate, String eventName) {
     Filter filter = Filter.newBuilder()
         .setFieldName("eventName")
         .setStringFilter(Filter.StringFilter.newBuilder()
@@ -182,7 +181,7 @@ public class Ga4Service {
 
     RunReportRequest request = RunReportRequest.newBuilder()
         .setProperty(prop)
-        .addDateRanges(DateRange.newBuilder().setStartDate("30daysAgo").setEndDate("today"))
+        .addDateRanges(DateRange.newBuilder().setStartDate(startDate).setEndDate("today"))
         .addMetrics(Metric.newBuilder().setName("eventCount"))
         .setDimensionFilter(exp)
         .build();
@@ -218,14 +217,14 @@ public class Ga4Service {
   }
 
   private static class Kpis {
-    final int users30d;
-    final int newUsers30d;
-    final String avgEngagementTimePretty;
+    final int users;
+    final int newUsers;
+    final String avgSessionDurationPretty;
 
-    Kpis(int users30d, int newUsers30d, String avgEngagementTimePretty) {
-      this.users30d = users30d;
-      this.newUsers30d = newUsers30d;
-      this.avgEngagementTimePretty = avgEngagementTimePretty;
+    Kpis(int users, int newUsers, String avgSessionDurationPretty) {
+      this.users = users;
+      this.newUsers = newUsers;
+      this.avgSessionDurationPretty = avgSessionDurationPretty;
     }
   }
 }
